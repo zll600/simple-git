@@ -11,6 +11,8 @@ import re
 import sys
 import zlib
 
+WYAG_DIR = '.wyag'
+
 argparser = argparse.ArgumentParser(description="The stupidest content tracker")
 argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
 argsubparsers.required = True
@@ -63,7 +65,7 @@ class GitRepository (object):
 
     def __init__(self, path: str, force: bool=False):
         self.worktree = path
-        self.gitdir = os.path.join(path, ".wyag")
+        self.gitdir = os.path.join(path, WYAG_DIR)
 
         if not (force or os.path.isdir(self.gitdir)):
             raise Exception("Not a Git repository %s" % path)
@@ -116,6 +118,25 @@ def repo_create(path: str) -> GitRepository:
         config.write(f)
 
     return repo
+
+def repo_find(path: str=".", required: bool=True):
+    path = os.path.realpath(path)
+    if os.path.isdir(os.path.join(path, WYAG_DIR)):
+        return GitRepository(path)
+
+    # If we haven't returned, recurse in parent, if w
+    parent = os.path.realpath(os.path.join(path, ".."))
+    if parent == path:
+        # Bottom case
+        # os.path.join("/", "..") == "/":
+        # If parent==path, then path is root.
+        if required:
+            raise Exception("No git directory.")
+        else:
+            return None
+
+    # Recursive case
+    return repo_find(parent, required)
 
 def repo_default_config() -> configparser.ConfigParser:
     ret = configparser.ConfigParser()
