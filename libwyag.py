@@ -2,7 +2,8 @@ import argparse
 import collections
 import configparser
 from datetime import datetime
-import grp, pwd
+import grp
+import pwd
 from fnmatch import fnmatch
 import hashlib
 from math import ceil
@@ -11,6 +12,7 @@ import re
 import sys
 import zlib
 import io
+import typing
 
 WYAG_DIR = '.wyag'
 
@@ -123,14 +125,11 @@ argsp.add_argument("path", nargs="+", help="Paths to check")
 # status
 argsp = argsubparsers.add_parser("status", help = "Show the working tree status.")
 
-class GitRepository:
-    pass
-
-def repo_path(repo: GitRepository, *path) -> str:
+def repo_path(repo: typing.ForwardRef('GitRepository'), *path) -> str:
     """Compute path under repo's gitdir."""
     return os.path.join(repo.gitdir, *path)
 
-def repo_file(repo: GitRepository, *path, mkdir=False) -> str:
+def repo_file(repo: typing.ForwardRef('GitRepository'), *path, mkdir=False) -> str:
     """Same as repo_path, but create dirname(*path) if absent.  For
 example, repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") will create
 .git/refs/remotes/origin."""
@@ -138,7 +137,7 @@ example, repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") will create
     if repo_dir(repo, *path[:-1], mkdir=mkdir):
         return repo_path(repo, *path)
 
-def repo_dir(repo: GitRepository, *path, mkdir: bool=False) -> str|None:
+def repo_dir(repo: typing.ForwardRef('GitRepository'), *path, mkdir: bool=False) -> str|None:
     """Same as repo_path, but mkdir *path if absent if mkdir."""
 
     path = repo_path(repo, *path)
@@ -155,7 +154,7 @@ def repo_dir(repo: GitRepository, *path, mkdir: bool=False) -> str|None:
     else:
         return None
 
-class GitRepository (object):
+class GitRepository:
     """A git repository"""
 
     worktree = None
@@ -205,14 +204,14 @@ def repo_create(path: str) -> GitRepository:
     assert repo_dir(repo, "refs", "heads", mkdir=True)
 
     # .git/description
-    with open(repo_file(repo, "description"), "w") as f:
+    with open(repo_file(repo, "description"), "w", encoding='utf-8') as f:
         f.write("Unnamed repository; edit this file 'description' to name the repository.\n")
 
     # .git/HEAD
-    with open(repo_file(repo, "HEAD"), "w") as f:
+    with open(repo_file(repo, "HEAD"), "w", encoding='utf-8') as f:
         f.write("ref: refs/heads/master\n")
 
-    with open(repo_file(repo, "config"), "w") as f:
+    with open(repo_file(repo, "config"), "w", encoding='utf-8') as f:
         config = repo_default_config()
         config.write(f)
 
@@ -271,7 +270,7 @@ whatever it takes to convert it into a meaningful representation.  What exactly 
 class GitBlob(GitObject):
     fmt=b'blob'
 
-    def serialize(self):
+    def serialize(self, repo: GitRepository):
         return self.blobdata
 
     def deserialize(self, data):
@@ -359,7 +358,7 @@ class GitCommit(GitObject):
     def deserialize(self, data):
         self.kvlm = kvlm_parse(data)
 
-    def serialize(self):
+    def serialize(self, repo: GitRepository):
         return kvlm_serialize(self.kvlm)
 
     def init(self):
@@ -396,9 +395,9 @@ def tree_parse_one(raw: str, start=0) -> tuple[int, GitTreeLeaf]:
 
 def tree_parse(raw) -> list[GitTreeLeaf]:
     pos = 0
-    max = len(raw)
+    max_len = len(raw)
     ret = list()
-    while pos < max:
+    while pos < max_len:
         pos, data = tree_parse_one(raw, pos)
         ret.append(data)
 
@@ -433,7 +432,7 @@ class GitTree(GitObject):
     def deserialize(self, data):
         self.items = tree_parse(data)
 
-    def serialize(self):
+    def serialize(self, repo: GitRepository):
         return tree_serialize(self)
 
     def init(self):
@@ -450,7 +449,7 @@ def ref_resolve(repo: GitRepository, ref: str) -> str:
     if not os.path.isfile(path):
         return None
 
-    with open(path, 'r') as fp:
+    with open(path, 'r', encoding='utf-8') as fp:
         data = fp.read()[:-1]
         # Drop final \n ^^^^^
     if data.startswith("ref: "):
@@ -481,33 +480,33 @@ class GitIndexEntry (object):
                  mode_type: int=None, mode_perms: int=None, uid: int=None, gid: int=None,
                  fsize: int=None, sha: str=None, flag_assume_valid: bool=None,
                  flag_stage: int=None, name: str=None):
-      # The last time a file's metadata changed.  This is a pair
-      # (timestamp in seconds, nanoseconds)
-      self.ctime = ctime
-      # The last time a file's data changed.  This is a pair
-      # (timestamp in seconds, nanoseconds)
-      self.mtime = mtime
-      # The ID of device containing this file
-      self.dev = dev
-      # The file's inode number
-      self.ino = ino
-      # The object type, either b1000 (regular), b1010 (symlink),
-      # b1110 (gitlink).
-      self.mode_type = mode_type
-      # The object permissions, an integer.
-      self.mode_perms = mode_perms
-      # User ID of owner
-      self.uid = uid
-      # Group ID of ownner
-      self.gid = gid
-      # Size of this object, in bytes
-      self.fsize = fsize
-      # The object's SHA
-      self.sha = sha
-      self.flag_assume_valid = flag_assume_valid
-      self.flag_stage = flag_stage
-      # Name of the object (full path this time!)
-      self.name = name
+        # The last time a file's metadata changed.  This is a pair
+        # (timestamp in seconds, nanoseconds)
+        self.ctime = ctime
+        # The last time a file's data changed.  This is a pair
+        # (timestamp in seconds, nanoseconds)
+        self.mtime = mtime
+        # The ID of device containing this file
+        self.dev = dev
+        # The file's inode number
+        self.ino = ino
+        # The object type, either b1000 (regular), b1010 (symlink),
+        # b1110 (gitlink).
+        self.mode_type = mode_type
+        # The object permissions, an integer.
+        self.mode_perms = mode_perms
+        # User ID of owner
+        self.uid = uid
+        # Group ID of ownner
+        self.gid = gid
+        # Size of this object, in bytes
+        self.fsize = fsize
+        # The object's SHA
+        self.sha = sha
+        self.flag_assume_valid = flag_assume_valid
+        self.flag_stage = flag_stage
+        # Name of the object (full path this time!)
+        self.name = name
 
 class GitIndex (object):
     version = None
@@ -795,43 +794,43 @@ This function is aware of:
     return candidates
 
 def object_find(repo: GitRepository, name: str, fmt=None, follow=True) -> str:
-      sha: list[str] = object_resolve(repo, name)
+    sha: list[str] = object_resolve(repo, name)
 
-      if not sha:
-          raise Exception("No such reference {0}.".format(name))
+    if not sha:
+        raise Exception("No such reference {0}.".format(name))
 
-      if len(sha) > 1:
-          raise Exception("Ambiguous reference {0}: Candidates are:\n - {1}.".format(name,  "\n - ".join(sha)))
+    if len(sha) > 1:
+        raise Exception("Ambiguous reference {0}: Candidates are:\n - {1}.".format(name,  "\n - ".join(sha)))
 
-      sha: str = sha[0]
+    sha: str = sha[0]
 
-      if not fmt:
-          return sha
+    if not fmt:
+        return sha
 
-      while True:
-          obj = object_read(repo, sha)
-          #     ^^^^^^^^^^^ < this is a bit agressive: we're reading
-          # the full object just to get its type.  And we're doing
-          # that in a loop, albeit normally short.  Don't expect
-          # high performance here.
+    while True:
+        obj = object_read(repo, sha)
+        #     ^^^^^^^^^^^ < this is a bit agressive: we're reading
+        # the full object just to get its type.  And we're doing
+        # that in a loop, albeit normally short.  Don't expect
+        # high performance here.
 
-          if obj.fmt == fmt:
-              return sha
+        if obj.fmt == fmt:
+            return sha
 
-          if not follow:
-              return None
+        if not follow:
+            return None
 
-          # Follow tags
-          if obj.fmt == b'tag':
-                sha = obj.kvlm[b'object'].decode("ascii")
-          elif obj.fmt == b'commit' and fmt == b'tree':
-                sha = obj.kvlm[b'tree'].decode("ascii")
-          else:
-              return None
+        # Follow tags
+        if obj.fmt == b'tag':
+            sha = obj.kvlm[b'object'].decode("ascii")
+        elif obj.fmt == b'commit' and fmt == b'tree':
+            sha = obj.kvlm[b'tree'].decode("ascii")
+        else:
+            return None
 
 def cat_file(repo: GitRepository, obj: str, fmt=None):
-    obj = object_read(repo, object_find(repo, obj, fmt=fmt))
-    sys.stdout.buffer.write(obj.serialize())
+    git_obj = object_read(repo, object_find(repo, obj, fmt=fmt))
+    sys.stdout.buffer.write(git_obj.serialize(repo))
 
 def cmd_cat_file(args):
     repo = repo_find()
@@ -987,7 +986,7 @@ def ref_create(repo: GitRepository, ref_name: str, sha: str):
     with open(repo_file(repo, "refs/" + ref_name), 'w') as fp:
         fp.write(sha + "\n")
 
-def tag_create(repo: GitRepository, name: str, ref: str, create_tag_object=False):
+def tag_create(repo: GitRepository, name: str, ref: str, create_tag_object=False, type=None):
     # get the GitObject from the object reference
     sha = object_find(repo, ref)
 
@@ -1033,34 +1032,34 @@ def cmd_rev_parse(args):
     print (object_find(repo, args.name, fmt, follow=True))
 
 def cmd_ls_files(args):
-  repo = repo_find()
-  index = index_read(repo)
-  if args.verbose:
-    print("Index file format v{}, containing {} entries.".format(index.version, len(index.entries)))
-
-  for e in index.entries:
-    print(e.name)
+    repo = repo_find()
+    index = index_read(repo)
     if args.verbose:
-      print("  {} with perms: {:o}".format(
-        { 0b1000: "regular file",
-          0b1010: "symlink",
-          0b1110: "git link" }[e.mode_type],
-        e.mode_perms))
-      print("  on blob: {}".format(e.sha))
-      print("  created: {}.{}, modified: {}.{}".format(
-        datetime.fromtimestamp(e.ctime[0])
-        , e.ctime[1]
-        , datetime.fromtimestamp(e.mtime[0])
-        , e.mtime[1]))
-      print("  device: {}, inode: {}".format(e.dev, e.ino))
-      print("  user: {} ({})  group: {} ({})".format(
-        pwd.getpwuid(e.uid).pw_name,
-        e.uid,
-        grp.getgrgid(e.gid).gr_name,
-        e.gid))
-      print("  flags: stage={} assume_valid={}".format(
-        e.flag_stage,
-        e.flag_assume_valid))
+        print("Index file format v{}, containing {} entries.".format(index.version, len(index.entries)))
+
+    for e in index.entries:
+        print(e.name)
+        if args.verbose:
+            print("  {} with perms: {:o}".format(
+                { 0b1000: "regular file",
+                0b1010: "symlink",
+                0b1110: "git link" }[e.mode_type],
+                e.mode_perms))
+            print("  on blob: {}".format(e.sha))
+            print("  created: {}.{}, modified: {}.{}".format(
+                datetime.fromtimestamp(e.ctime[0])
+                , e.ctime[1]
+                , datetime.fromtimestamp(e.mtime[0])
+                , e.mtime[1]))
+            print("  device: {}, inode: {}".format(e.dev, e.ino))
+            print("  user: {} ({})  group: {} ({})".format(
+                pwd.getpwuid(e.uid).pw_name,
+                e.uid,
+                grp.getgrgid(e.gid).gr_name,
+                e.gid))
+            print("  flags: stage={} assume_valid={}".format(
+                e.flag_stage,
+                e.flag_assume_valid))
 
 def gitignore_parse1(raw: str) -> tuple[str, bool]:
     raw = raw.strip() # Remove leading/trailing spaces
@@ -1162,14 +1161,14 @@ def check_ignore(rules: GitIgnore, path: str) -> bool|None:
 
 
 def cmd_check_ignore(args):
-  repo = repo_find()
-  rules = gitignore_read(repo)
-  for path in args.path:
-      if check_ignore(rules, path):
-        print(path)
+    repo = repo_find()
+    rules = gitignore_read(repo)
+    for path in args.path:
+        if check_ignore(rules, path):
+            print(path)
 
 def branch_get_active(repo: GitRepository) -> str|False:
-    with open(repo_file(repo, "HEAD"), "r") as f:
+    with open(repo_file(repo, "HEAD"), "r", encoding='utf-8') as f:
         head = f.read()
 
     if head.startswith("ref: refs/heads/"):
@@ -1187,27 +1186,27 @@ def cmd_status_branch(repo):
         print("HEAD detached at {}".format (object_find(repo, "HEAD")))
 
 def tree_to_dict(repo: GitRepository, ref: str, prefix=""):
-  ret = dict()
-  tree_sha = object_find(repo, ref, fmt=b"tree")
-  tree = object_read(repo, tree_sha)
+    ret = dict()
+    tree_sha = object_find(repo, ref, fmt=b"tree")
+    tree = object_read(repo, tree_sha)
 
-  for leaf in tree.items:
-      full_path = os.path.join(prefix, leaf.path)
+    for leaf in tree.items:
+        full_path = os.path.join(prefix, leaf.path)
 
-      # We read the object to extract its type (this is uselessly
-      # expensive: we could just open it as a file and read the
-      # first few bytes)
-      is_subtree = leaf.mode.startswith(b'04')
+        # We read the object to extract its type (this is uselessly
+        # expensive: we could just open it as a file and read the
+        # first few bytes)
+        is_subtree = leaf.mode.startswith(b'04')
 
-      # Depending on the type, we either store the path (if it's a
-      # blob, so a regular file), or recurse (if it's another tree,
-      # so a subdir)
-      if is_subtree:
-        ret.update(tree_to_dict(repo, leaf.sha, full_path))
-      else:
-        ret[full_path] = leaf.sha
+        # Depending on the type, we either store the path (if it's a
+        # blob, so a regular file), or recurse (if it's another tree,
+        # so a subdir)
+        if is_subtree:
+            ret.update(tree_to_dict(repo, leaf.sha, full_path))
+        else:
+            ret[full_path] = leaf.sha
 
-  return ret
+    return ret
 
 def cmd_status_head_index(repo: GitRepository, index: GitIndex):
     print("Changes to be committed:")
@@ -1296,96 +1295,96 @@ argsp = argsubparsers.add_parser("rm", help="Remove files from the working tree 
 argsp.add_argument("path", nargs="+", help="Files to remove")
 
 def rm(repo: GitRepository, paths: list[str], delete: bool=True, skip_missing: bool=False):
-  # Find and read the index
-  index = index_read(repo)
+    # Find and read the index
+    index = index_read(repo)
 
-  worktree = repo.worktree + os.sep
+    worktree = repo.worktree + os.sep
 
-  # Make paths absolute
-  abspaths = list()
-  for path in paths:
-    abspath = os.path.abspath(path)
-    if abspath.startswith(worktree):
-      abspaths.append(abspath)
-    else:
-      raise Exception("Cannot remove paths outside of worktree: {}".format(paths))
+    # Make paths absolute
+    abspaths = list()
+    for path in paths:
+        abspath = os.path.abspath(path)
+        if abspath.startswith(worktree):
+            abspaths.append(abspath)
+        else:
+            raise Exception("Cannot remove paths outside of worktree: {}".format(paths))
 
-  kept_entries = list()
-  remove = list()
+    kept_entries = list()
+    remove = list()
 
-  for e in index.entries:
-    full_path = os.path.join(repo.worktree, e.name)
+    for e in index.entries:
+        full_path = os.path.join(repo.worktree, e.name)
 
-    if full_path in abspaths:
-      remove.append(full_path)
-      abspaths.remove(full_path)
-    else:
-      kept_entries.append(e) # Preserve entry
+        if full_path in abspaths:
+            remove.append(full_path)
+            abspaths.remove(full_path)
+        else:
+            kept_entries.append(e) # Preserve entry
 
-  if len(abspaths) > 0 and not skip_missing:
-    raise Exception("Cannot remove paths not in the index: {}".format(abspaths))
+    if len(abspaths) > 0 and not skip_missing:
+        raise Exception("Cannot remove paths not in the index: {}".format(abspaths))
 
-  if delete:
-    for path in remove:
-      os.unlink(path)
+    if delete:
+        for path in remove:
+            os.unlink(path)
 
-  index.entries = kept_entries
-  index_write(repo, index)
+    index.entries = kept_entries
+    index_write(repo, index)
 
 def cmd_rm(args):
-  repo = repo_find()
-  rm(repo, args.path)
+    repo = repo_find()
+    rm(repo, args.path)
 
 argsp = argsubparsers.add_parser("add", help = "Add files contents to the index.")
 argsp.add_argument("path", nargs="+", help="Files to add")
 
 def add(repo: GitRepository, paths: list[str], delete: bool=True, skip_missing: bool=False) -> None:
-  # First remove all paths from the index, if they exist.
-  rm (repo, paths, delete=False, skip_missing=True)
+    # First remove all paths from the index, if they exist.
+    rm (repo, paths, delete=False, skip_missing=True)
 
-  worktree = repo.worktree + os.sep
+    worktree = repo.worktree + os.sep
 
-  # Convert the paths to pairs: (absolute, relative_to_worktree).
-  # Also delete them from the index if they're present.
-  clean_paths = list()
-  for path in paths:
-    abspath = os.path.abspath(path)
-    if not (abspath.startswith(worktree) and os.path.isfile(abspath)):
-      raise Exception("Not a file, or outside the worktree: {}".format(paths))
-    relpath = os.path.relpath(abspath, repo.worktree)
-    clean_paths.append((abspath,  relpath))
+    # Convert the paths to pairs: (absolute, relative_to_worktree).
+    # Also delete them from the index if they're present.
+    clean_paths = list()
+    for path in paths:
+        abspath = os.path.abspath(path)
+        if not (abspath.startswith(worktree) and os.path.isfile(abspath)):
+            raise Exception("Not a file, or outside the worktree: {}".format(paths))
+        relpath = os.path.relpath(abspath, repo.worktree)
+        clean_paths.append((abspath,  relpath))
 
-    # Find and read the index.  It was modified by rm.  (This isn't
-    # optimal, good enough for wyag!)
-    #
-    # @FIXME, though: we could just
-    # move the index through commands instead of reading and writing
-    # it over again.
-    index = index_read(repo)
+        # Find and read the index.  It was modified by rm.  (This isn't
+        # optimal, good enough for wyag!)
+        #
+        # @FIXME, though: we could just
+        # move the index through commands instead of reading and writing
+        # it over again.
+        index = index_read(repo)
 
-    for (abspath, relpath) in clean_paths:
-      with open(abspath, "rb") as fd:
-        sha = object_hash(fd, b"blob", repo)
+        for (abspath, relpath) in clean_paths:
+            with open(abspath, "rb") as fd:
+                sha = object_hash(fd, b"blob", repo)
 
-      stat = os.stat(abspath)
+        stat = os.stat(abspath)
 
-      ctime_s = int(stat.st_ctime)
-      ctime_ns = stat.st_ctime_ns % 10**9
-      mtime_s = int(stat.st_mtime)
-      mtime_ns = stat.st_mtime_ns % 10**9
+        ctime_s = int(stat.st_ctime)
+        ctime_ns = stat.st_ctime_ns % 10**9
+        mtime_s = int(stat.st_mtime)
+        mtime_ns = stat.st_mtime_ns % 10**9
 
-      entry = GitIndexEntry(ctime=(ctime_s, ctime_ns), mtime=(mtime_s, mtime_ns), dev=stat.st_dev, ino=stat.st_ino,
-                            mode_type=0b1000, mode_perms=0o644, uid=stat.st_uid, gid=stat.st_gid,
-                            fsize=stat.st_size, sha=sha, flag_assume_valid=False,
-                            flag_stage=False, name=relpath)
-      index.entries.append(entry)
+        entry = GitIndexEntry(ctime=(ctime_s, ctime_ns), mtime=(mtime_s, mtime_ns), dev=stat.st_dev, ino=stat.st_ino,
+                                mode_type=0b1000, mode_perms=0o644, uid=stat.st_uid, gid=stat.st_gid,
+                                fsize=stat.st_size, sha=sha, flag_assume_valid=False,
+                                flag_stage=False, name=relpath)
+        index.entries.append(entry)
 
-    # Write the index back
-    index_write(repo, index)
+        # Write the index back
+        index_write(repo, index)
 
 def cmd_add(args):
-  repo = repo_find()
-  add(repo, args.path)
+    repo = repo_find()
+    add(repo, args.path)
 
 argsp = argsubparsers.add_parser("commit", help="Record changes to the repository.")
 argsp.add_argument("-m",
@@ -1512,10 +1511,10 @@ def cmd_commit(args):
     # Update HEAD so our commit is now the tip of the active branch.
     active_branch = branch_get_active(repo)
     if active_branch: # If we're on a branch, we update refs/heads/BRANCH
-        with open(repo_file(repo, os.path.join("refs/heads", active_branch)), "w") as fd:
+        with open(repo_file(repo, os.path.join("refs/heads", active_branch)), "w", encoding='utf-8') as fd:
             fd.write(commit + "\n")
     else: # Otherwise, we update HEAD itself.
-        with open(repo_file(repo, "HEAD"), "w") as fd:
+        with open(repo_file(repo, "HEAD"), "w", encoding='utf-8') as fd:
             fd.write("\n")
 
 def main(argv=sys.argv[1:]):
