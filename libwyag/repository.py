@@ -42,7 +42,9 @@ def repo_dir(
         return None
 
 
-def repo_file(repo: typing.ForwardRef("GitRepository"), *path, mkdir: bool = False) -> str:
+def repo_file(
+    repo: typing.ForwardRef("GitRepository"), *path, mkdir: bool = False
+) -> str:
     """
     Same as repo_path, but create dirname(*path) if absent.
     For example, repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") will create
@@ -331,6 +333,7 @@ def tree_leaf_sort_key(leaf: GitTreeLeaf) -> str:
     else:
         return leaf.path + "/"
 
+
 class GitTree(GitObject):
     def __init__(self, data: str) -> typing.Self:
         self.format_str = b"tree"
@@ -344,6 +347,7 @@ class GitTree(GitObject):
 
     def init(self):
         self.items = list()
+
 
 def tree_serialize(obj: GitTree) -> str:
     obj.items.sort(key=tree_leaf_sort_key)
@@ -663,7 +667,9 @@ def object_read(repo: GitRepository, sha: str) -> GitObject:
             case b"blob":
                 git_object_type = GitBlob
             case _:
-                raise RuntimeError(f"Unknown type {fmt.decode("ascii")} for object {sha}")
+                raise RuntimeError(
+                    f"Unknown type {fmt.decode("ascii")} for object {sha}"
+                )
 
         # Call constructor and return object
         return git_object_type(raw[y + 1 :])
@@ -704,7 +710,7 @@ def object_resolve(repo: GitRepository, name: str) -> list[str]:
         - tags
         - branches
         - remote branches"""
-    candidates = list()
+    candidates = []
     hashRE = re.compile(r"^[0-9A-Fa-f]{4,40}$")
 
     # Empty string?  Abort.
@@ -853,7 +859,7 @@ def log_graphviz(repo: str, sha: str, seen: set) -> None:
 
     for p in parents:
         p = p.decode("ascii")
-        print("  c_{0} -> c_{1};".format(sha, p))
+        print(f"  c_{sha} -> c_{p};")
         log_graphviz(repo, p, seen)
 
 
@@ -1080,12 +1086,12 @@ def gitignore_parse1(raw: str) -> tuple[str, bool]:
 
     if not raw or raw[0] == "#":
         return None
-    elif raw[0] == "!":
+    if raw[0] == "!":
         return (raw[1:], False)
-    elif raw[0] == "\\":
+    if raw[0] == "\\":
         return (raw[1:], True)
-    else:
-        return (raw, True)
+
+    return (raw, True)
 
 
 def gitignore_parse(lines: list[str]) -> list[tuple[str, bool]]:
@@ -1099,10 +1105,7 @@ def gitignore_parse(lines: list[str]) -> list[tuple[str, bool]]:
     return ret
 
 
-class GitIgnore(object):
-    absolute = None
-    scoped = None
-
+class GitIgnore:
     def __init__(self, absolute, scoped):
         self.absolute: list = absolute
         self.scoped: dict = scoped
@@ -1112,9 +1115,9 @@ def gitignore_read(repo: GitRepository) -> GitIgnore:
     ret = GitIgnore(absolute=list(), scoped=dict())
 
     # Read local configuration in .git/info/exclude
-    repo_file = os.path.join(repo.gitdir, "info/exclude")
-    if os.path.exists(repo_file):
-        with open(repo_file, "r") as f:
+    local_repo_file = os.path.join(repo.git_dir, "info/exclude")
+    if os.path.exists(local_repo_file):
+        with open(local_repo_file, "r", encoding="utf-8") as f:
             ret.absolute.append(gitignore_parse(f.readlines()))
 
     # Global configuration
@@ -1125,7 +1128,7 @@ def gitignore_read(repo: GitRepository) -> GitIgnore:
     global_file = os.path.join(config_home, "git/ignore")
 
     if os.path.exists(global_file):
-        with open(global_file, "r") as f:
+        with open(global_file, "r", encoding="utf-8") as f:
             ret.absolute.append(gitignore_parse(f.readlines()))
 
     # .gitignore files in the index
@@ -1134,7 +1137,7 @@ def gitignore_read(repo: GitRepository) -> GitIgnore:
     for entry in index.entries:
         if entry.name == ".gitignore" or entry.name.endswith("/.gitignore"):
             dir_name = os.path.dirname(entry.name)
-            contents = object_read(repo, entry.sha)
+            contents: GitObject = object_read(repo, entry.sha)
             lines = contents.blobdata.decode("utf8").splitlines()
             ret.scoped[dir_name] = gitignore_parse(lines)
     return ret
@@ -1172,7 +1175,7 @@ def check_ignore_absolute(rules: list, path: str) -> bool | None:
 
 def check_ignore(rules: GitIgnore, path: str) -> bool | None:
     if os.path.isabs(path):
-        raise Exception(
+        raise RuntimeError(
             "This function requires path to be relative to the repository's root"
         )
 
@@ -1183,7 +1186,7 @@ def check_ignore(rules: GitIgnore, path: str) -> bool | None:
     return check_ignore_absolute(rules.absolute, path)
 
 
-def cmd_check_ignore(args):
+def cmd_check_ignore(args: argparse.Namespace):
     repo = repo_find()
     rules = gitignore_read(repo)
     for path in args.path:
@@ -1197,19 +1200,19 @@ def branch_get_active(repo: GitRepository) -> str | bool:
 
     if head.startswith("ref: refs/heads/"):
         return head[16:-1]
-    else:
-        return False
+
+    return False
 
 
 def cmd_status_branch(repo):
     branch = branch_get_active(repo)
     if branch:
-        print("On branch {}.".format(branch))
+        print(f"On branch {branch}.")
     else:
         print("HEAD detached at {}".format(object_find(repo, "HEAD")))
 
 
-def tree_to_dict(repo: GitRepository, ref: str, prefix=""):
+def tree_to_dict(repo: GitRepository, ref: str, prefix: str = ""):
     ret = dict()
     tree_sha = object_find(repo, ref, fmt=b"tree")
     tree = object_read(repo, tree_sha)
@@ -1328,31 +1331,31 @@ def rm(
     # Find and read the index
     index = index_read(repo)
 
-    worktree = repo.worktree + os.sep
+    work_tree = repo.work_tree + os.sep
 
     # Make paths absolute
-    abspaths = list()
+    abs_paths = []
     for path in paths:
         abspath = os.path.abspath(path)
-        if abspath.startswith(worktree):
-            abspaths.append(abspath)
+        if abspath.startswith(work_tree):
+            abs_paths.append(abspath)
         else:
-            raise Exception("Cannot remove paths outside of worktree: {}".format(paths))
+            raise RuntimeError("Cannot remove paths outside of worktree: {paths}")
 
-    kept_entries = list()
-    remove = list()
+    kept_entries = []
+    remove = []
 
     for e in index.entries:
-        full_path = os.path.join(repo.worktree, e.name)
+        full_path = os.path.join(repo.work_tree, e.name)
 
-        if full_path in abspaths:
+        if full_path in abs_paths:
             remove.append(full_path)
-            abspaths.remove(full_path)
+            abs_paths.remove(full_path)
         else:
             kept_entries.append(e)  # Preserve entry
 
-    if len(abspaths) > 0 and not skip_missing:
-        raise Exception("Cannot remove paths not in the index: {}".format(abspaths))
+    if len(abs_paths) > 0 and not skip_missing:
+        raise RuntimeError("Cannot remove paths not in the index: {abs_paths}")
 
     if delete:
         for path in remove:
@@ -1376,16 +1379,16 @@ def add(
     # First remove all paths from the index, if they exist.
     rm(repo, paths, delete=False, skip_missing=True)
 
-    worktree = repo.worktree + os.sep
+    work_tree = repo.work_tree + os.sep
 
     # Convert the paths to pairs: (absolute, relative_to_worktree).
     # Also delete them from the index if they're present.
     clean_paths = list()
     for path in paths:
         abspath = os.path.abspath(path)
-        if not (abspath.startswith(worktree) and os.path.isfile(abspath)):
-            raise Exception("Not a file, or outside the worktree: {}".format(paths))
-        relpath = os.path.relpath(abspath, repo.worktree)
+        if not (abspath.startswith(work_tree) and os.path.isfile(abspath)):
+            raise RuntimeError(f"Not a file, or outside the worktree: {paths}")
+        relpath = os.path.relpath(abspath, repo.work_tree)
         clean_paths.append((abspath, relpath))
 
         # Find and read the index.  It was modified by rm.  (This isn't
@@ -1428,7 +1431,7 @@ def add(
         index_write(repo, index)
 
 
-def cmd_add(args):
+def cmd_add(args: argparse.Namespace):
     repo = repo_find()
     add(repo, args.path)
 
