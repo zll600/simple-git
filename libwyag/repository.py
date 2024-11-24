@@ -12,22 +12,14 @@ import sys
 import zlib
 import io
 import typing
+import argparse
 
 WYAG_DIR = ".wyag"
 
 
 def repo_path(repo: typing.ForwardRef("GitRepository"), *path) -> str:
-    """Compute path under repo's gitdir."""
-    return os.path.join(repo.gitdir, *path)
-
-
-def repo_file(repo: typing.ForwardRef("GitRepository"), *path, mkdir=False) -> str:
-    """Same as repo_path, but create dirname(*path) if absent.  For
-    example, repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") will create
-    .git/refs/remotes/origin."""
-
-    if repo_dir(repo, *path[:-1], mkdir=mkdir):
-        return repo_path(repo, *path)
+    """Compute path under repo's git_dir."""
+    return os.path.join(repo.git_dir, *path)
 
 
 def repo_dir(
@@ -41,13 +33,24 @@ def repo_dir(
         if os.path.isdir(path):
             return path
         else:
-            raise Exception("Not a directory %s" % path)
+            raise NotADirectoryError("Not a directory {path}")
 
     if mkdir:
         os.makedirs(path)
         return path
     else:
         return None
+
+
+def repo_file(repo: typing.ForwardRef("GitRepository"), *path, mkdir: bool = False) -> str:
+    """
+    Same as repo_path, but create dirname(*path) if absent.
+    For example, repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") will create
+    .git/refs/remotes/origin.
+    """
+
+    if repo_dir(repo, *path[:-1], mkdir=mkdir):
+        return repo_path(repo, *path)
 
 
 class GitRepository:
@@ -72,7 +75,7 @@ class GitRepository:
         if not force:
             vers = int(self.conf.get("core", "repositoryformatversion"))
             if vers != 0:
-                raise RuntimeError("Unsupported repositoryformatversion %s" % vers)
+                raise RuntimeError(f"Unsupported repositoryformatversion {vers}")
 
 
 def repo_create(path: str) -> GitRepository:
@@ -124,7 +127,7 @@ def repo_find(path: str = ".", required: bool = True) -> GitRepository | None:
         # os.path.join("/", "..") == "/":
         # If parent==path, then path is root.
         if required:
-            raise Exception("No git directory.")
+            raise RuntimeError("No git directory.")
         else:
             return None
 
@@ -683,7 +686,7 @@ def object_write(obj, repo: GitRepository = None) -> str:
     return sha
 
 
-def cmd_init(args) -> GitRepository:
+def cmd_init(args: argparse.Namespace) -> GitRepository:
     repo_create(args.path)
 
 
